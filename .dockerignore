@@ -1,1 +1,7 @@
-
+.venv/
+.git/
+.env
+*.db
+__pycache__/
+*.py[cod]
+tests/

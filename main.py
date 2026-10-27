@@ -13,7 +13,8 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, create_engine, select, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, create_engine, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 ROOT = Path(__file__).resolve().parent
@@ -358,7 +359,11 @@ def check_in(request: Request):
             raise HTTPException(409, "You are already checked in.")
         record = Attendance(id=secrets.token_hex(12), worker_id=user.id, check_in=now_utc())
         db.add(record)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, "You are already checked in.")
         return {"ok": True, "check_in": dt_iso(record.check_in)}
 
 
@@ -377,8 +382,11 @@ def check_out(data: AttendanceIn, request: Request):
             raise HTTPException(422, "Invalid check-out time.")
         if data.break_minutes >= (finish - check_in_utc).total_seconds() / 60:
             raise HTTPException(422, "Break time must be shorter than the recorded shift.")
-        record.check_out = finish
-        record.break_minutes = data.break_minutes
+        changed = db.execute(update(Attendance).where(Attendance.id == record.id, Attendance.check_out.is_(None))
+                             .values(check_out=finish, break_minutes=data.break_minutes))
+        if changed.rowcount != 1:
+            db.rollback()
+            raise HTTPException(409, "This shift has already been checked out.")
         db.commit()
         org = db.get(Organization, user.org_id)
         hours = duration_hours(record.check_in, finish, record.break_minutes)
@@ -527,9 +535,9 @@ def admin_insights(request: Request, org_id: Optional[str] = None):
         summary = grounded_insight(data)
         # Optional server-side Gemini enhancement receives only aggregates and status/category counts.
         api_key = os.getenv("GEMINI_API_KEY")
+        ai_used = False
         if api_key:
             from urllib.request import Request as URLRequest, urlopen
-            from urllib.error import URLError
             counts: dict[str, int] = {}
             for row in data["reports"]:
                 key = f"{row['category']} | {row['status']}"
@@ -548,9 +556,10 @@ def admin_insights(request: Request, org_id: Optional[str] = None):
                     generated = json.loads(result.read().decode())
                 candidate = generated["candidates"][0]["content"]["parts"][0]["text"][:2000]
                 summary = candidate + "\n\nCounts shown above are calculated from application records."
+                ai_used = True
             except Exception:
                 pass  # Keep deterministic database-backed summary when AI is unavailable.
-        return {"summary": summary, "metrics": data["metrics"], "ai_enabled": bool(api_key)}
+        return {"summary": summary, "metrics": data["metrics"], "ai_enabled": bool(api_key), "ai_used": ai_used}
 
 
 @app.get("/api/admin/rules")

@@ -26,7 +26,6 @@ class FairShiftTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.context.__exit__(None, None, None)
-        main.SessionLocal.close_all()
         main.engine.dispose(close=True)
 
     def setUp(self):
@@ -36,6 +35,12 @@ class FairShiftTests(unittest.TestCase):
         response = self.client.post("/api/login", json={"email": email, "password": "FairShiftDemo26!"})
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["user"]
+
+    def test_static_dashboard_is_served(self):
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("FairShift", page.text)
+        self.assertEqual(self.client.get("/static/app.js").status_code, 200)
 
     def test_health_and_login(self):
         self.assertEqual(self.client.get("/health").json(), {"status": "ok"})
@@ -96,6 +101,15 @@ class FairShiftTests(unittest.TestCase):
         tracked = self.client.get(f"/api/reports/track/{ref}?access_code={code}")
         self.assertEqual(tracked.status_code, 200, tracked.text)
         self.assertEqual(tracked.json()["status"], "Under Review")
+
+    def test_ai_summary_falls_back_when_service_is_unavailable(self):
+        self.login("admin@fairshift.demo")
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-placeholder"}), patch("urllib.request.urlopen", side_effect=OSError("offline")):
+            response = self.client.post("/api/admin/insights?org_id=construction", json={})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["summary"])
+        self.assertTrue(response.json()["ai_enabled"])
+        self.assertFalse(response.json()["ai_used"])
 
     def test_organization_scenarios_and_db_backed_metrics(self):
         self.login("admin@fairshift.demo")
