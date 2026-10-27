@@ -62,7 +62,14 @@ The tests cover login/roles, duplicate check-ins, check-out, deterministic pay, 
 
 The FastAPI app is exposed through `index.py`, and Vercel supports FastAPI and managed Postgres integrations. Do not use SQLite for a serverless deployment because its function filesystem is not a durable shared database.
 
-1. Create a GitHub repository and push this project.
+1. Create an empty public GitHub repository named `fairshift-ai` (do not initialize it with a second README or extra branch), then run from this folder:
+
+   ```powershell
+   git remote add origin https://github.com/noidakbarshaik/fairshift-ai.git
+   git push -u origin main
+   ```
+
+   Submit `https://github.com/noidakbarshaik/fairshift-ai.git` only after the repository is public and the push succeeds.
 2. Import the repository into Vercel.
 3. Add a Postgres integration (for example, Neon through Vercel Marketplace) and set its connection string as `DATABASE_URL`.
 4. Set `ENVIRONMENT=production`, `COOKIE_SECURE=1`, and `FAIRSHIFT_SECRET` to a long random value in Vercel environment settings. Optionally set `GEMINI_API_KEY` and `GEMINI_MODEL`.
