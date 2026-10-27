@@ -18,7 +18,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 ROOT = Path(__file__).resolve().parent
-DB_URL = os.getenv("DATABASE_URL", f"sqlite:///{ROOT / 'fairshift.db'}")
+DEFAULT_DB_PATH = Path("/tmp/fairshift.db") if os.getenv("VERCEL") else ROOT / "fairshift.db"
+DB_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH}")
 if DB_URL.startswith("postgresql://"):
     DB_URL = "postgresql+psycopg://" + DB_URL[len("postgresql://"): ]
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {}, pool_pre_ping=True)
